@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import CryptoJS from 'crypto-js';
 
-const APP_VERSION = "v1.0.9";
+const APP_VERSION = "v1.0.11";
 
 function desencriptarTokenMrc(encryptedText: string): string {
   try {
@@ -24,11 +24,21 @@ function desencriptarTokenMrc(encryptedText: string): string {
 
 export default function App() {
   const [step, setStep] = useState<'config' | 'menu' | 'capture' | 'supplier'>('config');
-  const [config, setConfig] = useState({ id: '', license: '', country: 'AR', showDebugInfo: false, theme: 'dark' });
+  const [config, setConfig] = useState(() => {
+    try {
+      const saved = localStorage.getItem('mrc_config');
+      if (saved) {
+        return { id: '', license: '', country: 'AR', showDebugInfo: false, theme: 'dark', ...JSON.parse(saved) };
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    return { id: '', license: '', country: 'AR', showDebugInfo: false, theme: 'dark' };
+  });
+
   const [documentoFile, setDocumentoFile] = useState<File | null>(null);
   const [enviando, setEnviando] = useState(false);
 
-  // Estados para el formulario de Proveedores
   const [supplierForm, setSupplierForm] = useState({
     claveTributaria: '',
     nombre: '',
@@ -43,7 +53,6 @@ export default function App() {
   const cameraInputRef = useRef<HTMLInputElement>(null);
   const galleryInputRef = useRef<HTMLInputElement>(null);
 
-
   const [operario, setOperario] = useState<{
     u: number;
     g: number;
@@ -52,13 +61,6 @@ export default function App() {
   } | null>(null);
 
   useEffect(() => {
-    const saved = localStorage.getItem('mrc_config');
-    let loadedConfig = config;
-    if (saved) {
-      loadedConfig = { ...config, ...JSON.parse(saved), showDebugInfo: false };
-      setConfig(loadedConfig);
-    }
-
     const urlParams = new URLSearchParams(window.location.search);
     const token = urlParams.get('token');
 
@@ -86,18 +88,21 @@ export default function App() {
       }
     }
 
-    if (saved) {
+    if (localStorage.getItem('mrc_config')) {
       setStep('menu');
     }
   }, []);
 
   const handleSave = () => {
-    localStorage.setItem('mrc_config', JSON.stringify({ ...config, showDebugInfo: false }));
+    const updated = { ...config, showDebugInfo: false };
+    setConfig(updated);
+    localStorage.setItem('mrc_config', JSON.stringify(updated));
     setStep('menu');
   };
 
   const toggleTheme = () => {
-    const updatedConfig = { ...config, theme: config.theme === 'dark' ? 'light' : 'dark' };
+    const newTheme = config.theme === 'dark' ? 'light' : 'dark';
+    const updatedConfig = { ...config, theme: newTheme };
     setConfig(updatedConfig);
     localStorage.setItem('mrc_config', JSON.stringify(updatedConfig));
   };
@@ -139,7 +144,7 @@ export default function App() {
       if (response.ok) {
         alert("¡Documento enviado con éxito!");
         setDocumentoFile(null);
-        setStep('menu');
+        // Eliminamos setStep('menu') para que el usuario permanezca en la pantalla de captura
       } else {
         const errText = await response.text();
         alert(`Error en el servidor: ${errText || response.statusText}`);
@@ -159,12 +164,10 @@ export default function App() {
       const endpoint = "https://www.mrc307.com/MRC307/mrc307comprasinventarios/api/ai/vendor-upsert";
       const formData = new FormData();
 
-      // Adjuntar archivo si existe
       if (documentoFile) {
         formData.append('file', documentoFile);
       }
 
-      // Convertir lista de locales separados por comas a formato que acepte el backend (o enviar como string/array según prefiera)
       const listaLocalesArray = supplierForm.locales
         ? supplierForm.locales.split(',').map(l => l.trim()).filter(Boolean)
         : [];
@@ -213,30 +216,45 @@ export default function App() {
     }
   };
 
+  // Evaluación síncrona estricta basada en el estado actual de config.theme
   const isDark = config.theme === 'dark';
 
+  const t = isDark ? {
+    bg: 'bg-gray-900 text-white',
+    card: 'bg-gray-800 border-gray-700 text-white',
+    input: 'border-gray-700 bg-gray-800 text-white placeholder-gray-500',
+    muted: 'text-gray-400',
+    btnTheme: 'border-gray-700 bg-gray-800 text-gray-300'
+  } : {
+    bg: 'bg-gray-50 text-gray-900',
+    card: 'bg-white border-gray-300 text-gray-900',
+    input: 'border-gray-300 bg-white text-gray-900 placeholder-gray-400',
+    muted: 'text-gray-500',
+    btnTheme: 'border-gray-300 bg-white text-gray-700 shadow-xs'
+  };
+
   if (step === 'config') return (
-    <div className={`min-h-screen p-6 flex flex-col justify-center transition-colors ${isDark ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'}`}>
-      <h2 className={`text-2xl font-bold mb-6 text-center ${isDark ? 'text-gray-100' : 'text-gray-800'}`}>Configuración Mrc</h2>
+    <div className={`min-h-screen p-6 flex flex-col justify-center transition-colors ${t.bg}`}>
+      <h2 className="text-2xl font-bold mb-6 text-center">Configuración Mrc</h2>
 
       <select
-        className={`p-4 border rounded-xl mb-4 ${isDark ? 'border-gray-700 bg-gray-800 text-white' : 'border-gray-300 bg-white text-gray-900'}`}
+        className={`p-4 border rounded-xl mb-4 ${t.input}`}
         value={config.country}
         onChange={(e) => setConfig({ ...config, country: e.target.value })}
       >
-        <option value="AR">Argentina (CUIT)</option>
-        <option value="CL">Chile (RUT)</option>
+        <option value="AR" className={isDark ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}>Argentina (CUIT)</option>
+        <option value="CL" className={isDark ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}>Chile (RUT)</option>
       </select>
 
       <input
-        className={`p-4 border rounded-xl mb-4 ${isDark ? 'border-gray-700 bg-gray-800 text-white placeholder-gray-500' : 'border-gray-300 bg-white text-gray-900 placeholder-gray-400'}`}
+        className={`p-4 border rounded-xl mb-4 ${t.input}`}
         value={config.id}
         placeholder={config.country === 'AR' ? "CUIT" : "RUT"}
         onChange={(e) => setConfig({ ...config, id: e.target.value })}
       />
 
       <input
-        className={`p-4 border rounded-xl mb-6 ${isDark ? 'border-gray-700 bg-gray-800 text-white placeholder-gray-500' : 'border-gray-300 bg-white text-gray-900 placeholder-gray-400'}`}
+        className={`p-4 border rounded-xl mb-6 ${t.input}`}
         value={config.license}
         placeholder="Licencia"
         onChange={(e) => setConfig({ ...config, license: e.target.value })}
@@ -246,18 +264,18 @@ export default function App() {
         GUARDAR Y CONTINUAR
       </button>
 
-      <div className={`text-[10px] text-center tracking-widest uppercase ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+      <div className={`text-[10px] text-center tracking-widest uppercase ${t.muted}`}>
         {APP_VERSION}
       </div>
     </div>
   );
 
   if (step === 'menu') return (
-    <div className={`min-h-screen p-6 flex flex-col justify-center gap-6 transition-colors ${isDark ? 'bg-gray-900' : 'bg-gray-100'}`}>
+    <div className={`min-h-screen p-6 flex flex-col justify-center gap-6 transition-colors ${t.bg}`}>
       <div className="flex justify-end">
         <button
           onClick={toggleTheme}
-          className={`p-3 border rounded-xl font-bold text-xs active:scale-95 transition-all ${isDark ? 'border-gray-700 bg-gray-800 text-gray-300' : 'border-gray-300 bg-white text-gray-700 shadow-xs'}`}
+          className={`p-3 border rounded-xl font-bold text-xs active:scale-95 transition-all ${t.btnTheme}`}
         >
           {isDark ? '☀️ MODO CLARO' : '🌙 MODO OSCURO'}
         </button>
@@ -268,7 +286,7 @@ export default function App() {
       {operario && (
         <div className={`text-center text-xs font-bold p-3 rounded-xl mb-2 shadow-xs border ${isDark ? 'bg-gray-800 border-green-900/50 text-green-400' : 'bg-green-50 border-green-200 text-green-700'}`}>
           <div>👋 Operario: {operario.m}</div>
-          <div className={`text-[10px] mt-1 ${isDark ? 'text-gray-500' : 'text-gray-500'}`}>
+          <div className={`text-[10px] mt-1 ${t.muted}`}>
             ID: {operario.u} | Grupo: {operario.g}
           </div>
         </div>
@@ -278,7 +296,7 @@ export default function App() {
         COMPRAS
       </button>
 
-      <button className={`p-10 text-2xl font-bold rounded-3xl cursor-not-allowed opacity-70 border ${isDark ? 'bg-gray-800 text-gray-500 border-gray-700' : 'bg-gray-200 text-gray-400 border-gray-300'}`}>
+      <button className={`p-10 text-2xl font-bold rounded-3xl cursor-not-allowed opacity-70 border ${t.card}`}>
         INVENTARIO
       </button>
 
@@ -301,23 +319,22 @@ export default function App() {
         </button>
       </div>
 
-      <div className={`text-[10px] text-center tracking-widest uppercase mt-2 ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>
+      <div className={`text-[10px] text-center tracking-widest uppercase mt-2 ${t.muted}`}>
         {APP_VERSION}
       </div>
     </div>
   );
 
-  // Pantalla de Proveedores con Captura de Foto/Archivo y Carga Manual de Datos
   if (step === 'supplier') return (
-    <div className={`min-h-screen flex flex-col p-4 transition-colors ${isDark ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-900'}`}>
+    <div className={`min-h-screen flex flex-col p-4 transition-colors ${t.bg}`}>
       <div className="flex justify-between items-center mb-3 flex-none">
         <button onClick={() => setStep('menu')} className={`font-bold py-2 active:scale-95 transition-all ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>
           ← VOLVER
         </button>
-        <h2 className={`text-lg font-bold ${isDark ? 'text-gray-100' : 'text-gray-800'}`}>Gestión de Proveedores</h2>
+        <h2 className="text-lg font-bold">Gestión de Proveedores</h2>
         <button
           onClick={toggleTheme}
-          className={`p-2 border rounded-xl font-bold text-xs active:scale-95 transition-all ${isDark ? 'border-gray-700 bg-gray-800 text-gray-300' : 'border-gray-300 bg-white text-gray-700'}`}
+          className={`p-2 border rounded-xl font-bold text-xs active:scale-95 transition-all ${t.btnTheme}`}
         >
           {isDark ? '☀️' : '🌙'}
         </button>
@@ -341,11 +358,10 @@ export default function App() {
       />
 
       <div className="flex-1 flex flex-col gap-3 pb-4 overflow-y-auto">
-        {/* Sección de captura de archivo opcional */}
-        <div className={`flex flex-col items-center justify-center p-4 border-2 border-dashed rounded-2xl transition-all ${documentoFile ? (isDark ? 'border-green-600 bg-green-900/20' : 'border-green-500 bg-green-50') : (isDark ? 'border-gray-700 bg-gray-800' : 'border-gray-300 bg-white')}`}>
+        <div className={`flex flex-col items-center justify-center p-4 border-2 border-dashed rounded-2xl transition-all ${documentoFile ? (isDark ? 'border-green-600 bg-green-900/20' : 'border-green-500 bg-green-50') : t.card}`}>
           <div className="flex items-center gap-2 mb-2">
             <span className="text-2xl">{documentoFile ? '📄' : '📋'}</span>
-            <span className={`text-xs font-bold ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+            <span className="text-xs font-bold">
               {documentoFile ? documentoFile.name : 'Adjuntar factura o constancia (Opcional)'}
             </span>
           </div>
@@ -366,23 +382,22 @@ export default function App() {
           </div>
         </div>
 
-        {/* Campos de datos a mano */}
         <input
-          className={`p-3 border rounded-xl text-sm ${isDark ? 'border-gray-700 bg-gray-800 text-white placeholder-gray-500' : 'border-gray-300 bg-white text-gray-900 placeholder-gray-400'}`}
+          className={`p-3 border rounded-xl text-sm ${t.input}`}
           value={supplierForm.claveTributaria}
           placeholder="Clave tributaria (CUIT / RUT / RUC)"
           onChange={(e) => setSupplierForm({ ...supplierForm, claveTributaria: e.target.value })}
         />
 
         <input
-          className={`p-3 border rounded-xl text-sm ${isDark ? 'border-gray-700 bg-gray-800 text-white placeholder-gray-500' : 'border-gray-300 bg-white text-gray-900 placeholder-gray-400'}`}
+          className={`p-3 border rounded-xl text-sm ${t.input}`}
           value={supplierForm.nombre}
           placeholder="Nombre"
           onChange={(e) => setSupplierForm({ ...supplierForm, nombre: e.target.value })}
         />
 
         <input
-          className={`p-3 border rounded-xl text-sm ${isDark ? 'border-gray-700 bg-gray-800 text-white placeholder-gray-500' : 'border-gray-300 bg-white text-gray-900 placeholder-gray-400'}`}
+          className={`p-3 border rounded-xl text-sm ${t.input}`}
           value={supplierForm.domicilio}
           placeholder="Domicilio"
           onChange={(e) => setSupplierForm({ ...supplierForm, domicilio: e.target.value })}
@@ -390,14 +405,14 @@ export default function App() {
 
         <div className="grid grid-cols-2 gap-2">
           <input
-            className={`p-3 border rounded-xl text-sm ${isDark ? 'border-gray-700 bg-gray-800 text-white placeholder-gray-500' : 'border-gray-300 bg-white text-gray-900 placeholder-gray-400'}`}
+            className={`p-3 border rounded-xl text-sm ${t.input}`}
             value={supplierForm.ciudad}
             placeholder="Ciudad"
             onChange={(e) => setSupplierForm({ ...supplierForm, ciudad: e.target.value })}
           />
 
           <input
-            className={`p-3 border rounded-xl text-sm ${isDark ? 'border-gray-700 bg-gray-800 text-white placeholder-gray-500' : 'border-gray-300 bg-white text-gray-900 placeholder-gray-400'}`}
+            className={`p-3 border rounded-xl text-sm ${t.input}`}
             value={supplierForm.estado}
             placeholder="Estado"
             onChange={(e) => setSupplierForm({ ...supplierForm, estado: e.target.value })}
@@ -406,7 +421,7 @@ export default function App() {
 
         <input
           type="email"
-          className={`p-3 border rounded-xl text-sm ${isDark ? 'border-gray-700 bg-gray-800 text-white placeholder-gray-500' : 'border-gray-300 bg-white text-gray-900 placeholder-gray-400'}`}
+          className={`p-3 border rounded-xl text-sm ${t.input}`}
           value={supplierForm.email}
           placeholder="Email"
           onChange={(e) => setSupplierForm({ ...supplierForm, email: e.target.value })}
@@ -414,14 +429,14 @@ export default function App() {
 
         <input
           type="tel"
-          className={`p-3 border rounded-xl text-sm ${isDark ? 'border-gray-700 bg-gray-800 text-white placeholder-gray-500' : 'border-gray-300 bg-white text-gray-900 placeholder-gray-400'}`}
+          className={`p-3 border rounded-xl text-sm ${t.input}`}
           value={supplierForm.telefono}
           placeholder="Teléfono"
           onChange={(e) => setSupplierForm({ ...supplierForm, telefono: e.target.value })}
         />
 
         <textarea
-          className={`p-3 border rounded-xl text-sm h-20 resize-none ${isDark ? 'border-gray-700 bg-gray-800 text-white placeholder-gray-500' : 'border-gray-300 bg-white text-gray-900 placeholder-gray-400'}`}
+          className={`p-3 border rounded-xl text-sm h-20 resize-none ${t.input}`}
           value={supplierForm.locales}
           placeholder="Lista de locales separados por comas (ej: Local 1, Local 2)"
           onChange={(e) => setSupplierForm({ ...supplierForm, locales: e.target.value })}
@@ -439,7 +454,7 @@ export default function App() {
   );
 
   return (
-    <div className={`h-dvh flex flex-col p-4 overflow-hidden transition-colors ${isDark ? 'bg-gray-900' : 'bg-gray-50'}`}>
+    <div className={`h-dvh flex flex-col p-4 overflow-hidden transition-colors ${t.bg}`}>
 
       <div className="flex justify-between items-center mb-2 flex-none">
         <button onClick={() => setStep('menu')} className={`font-bold py-2 active:scale-95 transition-all ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>
@@ -448,7 +463,7 @@ export default function App() {
 
         <button
           onClick={toggleTheme}
-          className={`p-3 border rounded-xl font-bold text-xs active:scale-95 transition-all ${isDark ? 'border-gray-700 bg-gray-800 text-gray-300' : 'border-gray-300 bg-white text-gray-700 shadow-xs'}`}
+          className={`p-3 border rounded-xl font-bold text-xs active:scale-95 transition-all ${t.btnTheme}`}
         >
           {isDark ? '☀️ CLARO' : '🌙 OSCURO'}
         </button>
@@ -472,9 +487,9 @@ export default function App() {
       />
 
       <div className="flex-1 flex flex-col min-h-0 overflow-y-auto gap-4 mb-4">
-        <div className={`flex-1 min-h-[150px] flex flex-col items-center justify-center border-4 border-dashed rounded-3xl transition-all shadow-inner ${documentoFile ? (isDark ? 'border-green-600 bg-green-900/20' : 'border-green-500 bg-green-50') : (isDark ? 'border-gray-700 bg-gray-800' : 'border-gray-300 bg-white')}`}>
+        <div className={`flex-1 min-h-[150px] flex flex-col items-center justify-center border-4 border-dashed rounded-3xl transition-all shadow-inner ${documentoFile ? (isDark ? 'border-green-600 bg-green-900/20' : 'border-green-500 bg-green-50') : t.card}`}>
           <span className="text-5xl mb-2">{documentoFile ? '📄' : '📋'}</span>
-          <p className={`font-bold px-4 text-center text-sm ${isDark ? 'text-gray-300' : 'text-gray-600'}`}>
+          <p className={`font-bold px-4 text-center text-sm ${t.muted}`}>
             {documentoFile ? 'Documento cargado correctamente' : 'Ningún archivo seleccionado'}
           </p>
           {documentoFile && (
